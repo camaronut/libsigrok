@@ -778,7 +778,9 @@ SR_PRIV int siglent_sds_get_dev_cfg(const struct sr_dev_inst *sdi)
 	tokens = g_strsplit(response, ",", 0);
 	for (num_tokens = 0; tokens[num_tokens] != NULL; num_tokens++);
 	if (num_tokens < 4) {
-		sr_dbg("IDN response not according to spec: %80.s.", response);
+		sr_err("IDN response not supported: %80.s.", response);
+		sr_err("Only simple triggers supported at this time.");
+		sr_err("SERIAL, TV, etc not supported.");
 		g_strfreev(tokens);
 		g_free(response);
 		return SR_ERR_DATA;
