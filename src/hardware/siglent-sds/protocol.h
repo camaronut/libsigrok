@@ -101,6 +101,8 @@ struct dev_context {
 	/* Channel groups */
 	struct sr_channel_group **analog_groups;
 	struct sr_channel_group *digital_group;
+	const char **trigger_sources;
+	int num_trigger_sources;
 
 	/* Acquisition settings */
 	GSList *enabled_channels;
@@ -125,7 +127,7 @@ struct dev_context {
 	float vdiv[MAX_ANALOG_CHANNELS];
 	int vert_reference[MAX_ANALOG_CHANNELS];
 	float vert_offset[MAX_ANALOG_CHANNELS];
-	char *trigger_source;
+	const char *trigger_source;
 	float horiz_triggerpos;
 	char *trigger_slope;
 	float trigger_level;

@@ -127,10 +127,17 @@ static const uint64_t vdivs[][2] = {
 	{ 100, 1 },
 };
 
-static const char *trigger_sources[] = {
-	"CH1", "CH2", "Ext", "Ext /5", "AC Line",
+static const char *analog_trigger_sources[] = {
+	"CH1", "CH2", "CH3", "CH4",
+};
+
+static const char *digital_trigger_sources[] = {
 	"D0", "D1", "D2", "D3", "D4", "D5", "D6", "D7",
 	"D8", "D9", "D10", "D11", "D12", "D13", "D14", "D15",
+};
+
+static const char *other_trigger_sources[] = {
+	"Ext", "Ext /5", "AC Line",
 };
 
 static const char *trigger_slopes[] = {
@@ -239,6 +246,7 @@ static void clear_helper(void *priv)
 	if (!devc)
 		return;
 	g_free(devc->analog_groups);
+	g_free(devc->trigger_sources);
 	g_free(devc->enabled_channels);
 }
 
@@ -301,6 +309,10 @@ static struct sr_dev_inst *probe_device(struct sr_scpi_dev_inst *scpi)
 	devc->analog_groups = g_malloc0(sizeof(struct sr_channel_group *) *
 		model->analog_channels);
 
+	devc->trigger_sources = g_malloc0(sizeof(char*) * (model->analog_channels +
+			(devc->model->has_digital? ARRAY_SIZE(devc->digital_channels):0) +
+			ARRAY_SIZE(other_trigger_sources)));
+
 	for (i = 0; i < model->analog_channels; i++) {
 		channel_name = g_strdup_printf("CH%d", i + 1);
 		ch = sr_channel_new(sdi, i, SR_CHANNEL_ANALOG, TRUE, channel_name);
@@ -311,7 +323,9 @@ static struct sr_dev_inst *probe_device(struct sr_scpi_dev_inst *scpi)
 		devc->analog_groups[i]->channels = g_slist_append(NULL, ch);
 		sdi->channel_groups = g_slist_append(sdi->channel_groups,
 			devc->analog_groups[i]);
+		devc->trigger_sources[i] = analog_trigger_sources[i];
 	}
+	devc->num_trigger_sources = model->analog_channels;
 
 	if (devc->model->has_digital) {
 		devc->digital_group = g_malloc0(sizeof(struct sr_channel_group));
@@ -320,13 +334,21 @@ static struct sr_dev_inst *probe_device(struct sr_scpi_dev_inst *scpi)
 			channel_name = g_strdup_printf("D%d", i);
 			ch = sr_channel_new(sdi, i, SR_CHANNEL_LOGIC, TRUE, channel_name);
 			g_free(channel_name);
+			devc->trigger_sources[i + devc->num_trigger_sources] =
+				digital_trigger_sources[i];
 			devc->digital_group->channels = g_slist_append(
 				devc->digital_group->channels, ch);
 		}
 		devc->digital_group->name = g_strdup("LA");
 		sdi->channel_groups = g_slist_append(sdi->channel_groups,
 			devc->digital_group);
+		devc->num_trigger_sources += ARRAY_SIZE(devc->digital_channels);
 	}
+	for (i = 0; i < ARRAY_SIZE(other_trigger_sources); i++) {
+		devc->trigger_sources[i + devc->num_trigger_sources] =
+			other_trigger_sources[i];
+	}
+	devc->num_trigger_sources += ARRAY_SIZE(other_trigger_sources);
 
 	for (i = 0; i < ARRAY_SIZE(timebases); i++) {
 		if (!memcmp(&devc->model->min_timebase, &timebases[i], sizeof(uint64_t[2])))
@@ -442,10 +464,15 @@ static int config_get(uint32_t key, GVariant **data,
 	case SR_CONF_TRIGGER_SOURCE:
 		if (!strcmp(devc->trigger_source, "ACL"))
 			tmp_str = "AC Line";
+		/* TODO - make this a regex search */
 		else if (!strcmp(devc->trigger_source, "CHAN1"))
 			tmp_str = "CH1";
 		else if (!strcmp(devc->trigger_source, "CHAN2"))
 			tmp_str = "CH2";
+		else if (!strcmp(devc->trigger_source, "CHAN3"))
+			tmp_str = "CH3";
+		else if (!strcmp(devc->trigger_source, "CHAN4"))
+			tmp_str = "CH4";
 		else
 			tmp_str = devc->trigger_source;
 		*data = g_variant_new_string(tmp_str);
@@ -606,10 +633,10 @@ static int config_set(uint32_t key, GVariant *data,
 		g_free(cmd);
 		return ret;
 	case SR_CONF_TRIGGER_SOURCE:
-		if ((idx = std_str_idx(data, ARRAY_AND_SIZE(trigger_sources))) < 0)
+		if ((idx = std_str_idx(data, devc->trigger_sources,
+						devc->num_trigger_sources)) < 0)
 			return SR_ERR_ARG;
-		g_free(devc->trigger_source);
-		devc->trigger_source = g_strdup(trigger_sources[idx]);
+		devc->trigger_source = devc->trigger_sources[idx];
 		if (!strcmp(devc->trigger_source, "AC Line"))
 			tmp_str = "LINE";
 		else if (!strcmp(devc->trigger_source, "CH1"))
@@ -760,8 +787,8 @@ static int config_list(uint32_t key, GVariant **data,
 		if (!devc)
 			/* Can't know this until we have the exact model. */
 			return SR_ERR_ARG;
-		*data = g_variant_new_strv(trigger_sources,
-			devc->model->has_digital ? ARRAY_SIZE(trigger_sources) : 5);
+		*data = g_variant_new_strv(devc->trigger_sources,
+			devc->num_trigger_sources);
 		break;
 	case SR_CONF_TRIGGER_SLOPE:
 		*data = g_variant_new_strv(ARRAY_AND_SIZE(trigger_slopes));
